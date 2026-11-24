@@ -18,6 +18,7 @@ import { useEditor } from '@/lib/store';
 import { saveBoard } from '@/lib/db';
 import { buildSvg, exportJson, exportPng, exportSvg, slugify } from '@/lib/exporters';
 import { buildQuickStart } from '@/lib/templates';
+import { describeShareHash } from '@/lib/share';
 import { parseBoardFile } from '@/lib/upload';
 import { elementAtPoint } from '@/lib/hit';
 import { uid } from '@/lib/geometry';
@@ -35,6 +36,13 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
   const { toast } = useToast();
 
   const { status, shared } = useEditorSession(id, hash);
+  const [diag, setDiag] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('diag')) return;
+    setDiag(describeShareHash(window.location.hash));
+  }, []);
 
   const elements = useEditor((state) => state.elements);
   const title = useEditor((state) => state.title);
@@ -228,6 +236,11 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
             Boards are stored in your browser. If you opened this from another device, hold the full
             share link, or import a JSON backup you exported earlier.
           </p>
+          {diag ? (
+            <pre className="mt-3 whitespace-pre-wrap break-words rounded bg-[var(--surface-sunken)] p-2 text-left text-[10px] text-[var(--ink-faint)]">
+              {diag}
+            </pre>
+          ) : null}
           <div className="mt-5 flex justify-center gap-2">
             <Link href="/" className="btn-outline">
               All boards
