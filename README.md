@@ -5,18 +5,25 @@ and running meetings. Built with **Next.js 15 (App Router)**, **TypeScript**, an
 with a hand-written canvas engine (no drawing library) so every interaction, export, and shortcut
 is fully under our control.
 
-> **Live app:** see the deployment link shared with this project.
+> **Live app:** https://whiteboard-studio-two.vercel.app
 > **Local:** `npm install && npm run dev` → http://localhost:3000
 
 ---
 
 ## ✨ Features
 
+> **Recent fixes:** board deletion from the dashboard menu works on every screen size, freehand
+> strokes are smoothly curved instead of faceted, and the whole editor is finger-friendly
+> (pinch-zoom, double-tap editing, no stray second-finger strokes).
+
 ### Canvas
 - **Infinite, pannable, zoomable canvas** with trackpad pan, `⌘/Ctrl + scroll` zoom-at-pointer,
   minimap navigation, live zoom percentage, fit-to-screen and reset-view.
 - **Tools:** select/move, hand/pan, pen, highlighter, eraser, line, arrow, rectangle, ellipse,
   diamond, sticky note, text, and shape-to-shape **connectors**.
+- **Smooth ink:** freehand strokes are captured with coalesced pointer samples and rendered as a
+  midpoint quadratic spline, so pen and highlighter lines stay round at any zoom (also in SVG/PNG
+  exports and board thumbnails).
 - **Object editing:** move, resize (8 handles), rotate, duplicate, delete, group/ungroup,
   lock/unlock, and reorder (front/back/forward/backward).
 - **Styling:** stroke & fill colours (with custom colour pickers), stroke width, dashed/dotted
@@ -202,9 +209,14 @@ The test suite covers:
 ### Accessibility & UX
 - Every control has an accessible name; dialogs trap focus, close on `Escape`, and restore focus.
 - `aria-pressed` on tool toggles, `aria-live` save status, visible keyboard focus rings.
+- **Touch-first controls:** two-finger pinch zoom and pan, double-tap to edit, a second finger can
+  never hijack an in-progress stroke, pointer-driven minimap, a wrapping mobile toolbar, 40 px tap
+  targets, and `touch-action: manipulation` on the chrome (no double-tap zoom on buttons).
 - Touch-friendly hit targets, `touch-action: none` on the canvas, responsive layout from 360 px up.
 - Light/dark themes via CSS custom properties with a no-flash inline bootstrap script.
 - Loading, empty, success, and error states for every async path (no dead buttons).
+- Board-card action menus are portalled to `<body>` so they are never clipped by the card frame,
+  and deletion is optimistic with a rollback if local storage refuses the write.
 
 ---
 
