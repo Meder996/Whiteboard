@@ -87,6 +87,8 @@
     @apply inline-flex select-none items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors;
     @apply disabled:pointer-events-none disabled:opacity-40;
     color: var(--ink);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .btn-ghost {
@@ -149,6 +151,9 @@
   .tool-btn {
     @apply relative grid h-10 w-10 place-items-center rounded-lg transition-colors;
     color: var(--ink-muted);
+    /* Comfortable thumb target and no double-tap zoom/select delay. */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .tool-btn:hover {
@@ -163,8 +168,9 @@
   }
 
   .menu-item {
-    @apply flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm;
+    @apply flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm;
     color: var(--ink);
+    touch-action: manipulation;
   }
 
   .menu-item:hover:not(:disabled),

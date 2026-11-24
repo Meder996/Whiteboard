@@ -6,7 +6,7 @@
  * exported output matches the visible board.
  */
 
-import { anchorPoint, elementCenter, rotatePoint } from './geometry';
+import { anchorPoint, elementCenter, rotatePoint, smoothPath } from './geometry';
 import { FONT_STACKS, LINE_HEIGHT_RATIO, layoutText, textPaddingFor } from './text';
 import type { BoardElement, BoardBackground, ElementBinding, Point } from './types';
 
@@ -139,7 +139,7 @@ const elementToSvg = (element: BoardElement, elements: BoardElement[]): string =
   if (element.type === 'draw' || element.type === 'highlighter') {
     const points = element.points ?? [];
     if (points.length < 2) return '';
-    const d = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${num(point.x)} ${num(point.y)}`).join(' ');
+    const d = smoothPath(points);
     return `<g transform="translate(${num(element.x)} ${num(element.y)})"${transformFor(element)} opacity="${element.type === 'highlighter' ? 0.45 : element.opacity}"><path d="${d}" fill="none" stroke="${element.stroke}" stroke-width="${element.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" /></g>`;
   }
 

@@ -131,11 +131,24 @@ export default function DashboardPage() {
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget) return;
-    await deleteBoard(deleteTarget.id);
-    setBoards((current) => current.filter((board) => board.id !== deleteTarget.id));
+    const target = deleteTarget;
+    if (!target) return;
+    // Optimistically drop the card, then remove it from storage. If storage
+    // fails we restore the card and say so rather than silently losing track.
     setDeleteTarget(null);
-    toast({ title: 'Board deleted', variant: 'success' });
+    setBoards((current) => current.filter((board) => board.id !== target.id));
+    setPreviews((current) => {
+      const next = { ...current };
+      delete next[target.id];
+      return next;
+    });
+    try {
+      await deleteBoard(target.id);
+      toast({ title: 'Board deleted', description: `“${target.title}” was removed.`, variant: 'success' });
+    } catch {
+      toast({ title: 'Could not delete the board', description: 'Local storage may be blocked.', variant: 'error' });
+      await refresh();
+    }
   };
 
   const importBoard = () => {

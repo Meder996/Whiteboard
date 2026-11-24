@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { anchorPoint, elementCenter, rotatePoint } from './geometry';
+import { anchorPoint, elementCenter, rotatePoint, smoothPath } from './geometry';
 import { FONT_STACKS, LINE_HEIGHT_RATIO, layoutText, measureText, textPaddingFor } from './text';
 import type { BaseElement, BoardElement, ElementBinding, Point, TextStyle } from './types';
 
@@ -155,7 +155,7 @@ export const ElementShape = ({ element }: { element: BaseElement }): ReactNode =
 const PathElement = ({ element }: { element: BaseElement }) => {
   const points = element.points ?? [];
   if (points.length < 2) return null;
-  const d = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  const d = smoothPath(points);
   return (
     <path
       d={d}

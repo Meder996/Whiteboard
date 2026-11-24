@@ -99,25 +99,3 @@ export const sharePermissionHint = (permission: SharePermission) => {
   return 'Editable copy share link';
 };
 
-/** Temporary diagnostic helper: explains why a share hash does or doesn't parse. */
-export const describeShareHash = (hash: string): string => {
-  try {
-    const params = new URLSearchParams(hash.replace(/^#/, ''));
-    const raw = params.get('s');
-    if (!raw) return `no s param (hashLength=${hash.length}, prefix=${hash.slice(0, 40)})`;
-    let json: string;
-    try {
-      json = fromBase64Url(raw);
-    } catch (error) {
-      return `base64 decode failed: ${(error as Error).message} (rawLen=${raw.length})`;
-    }
-    try {
-      const parsed = JSON.parse(json);
-      return `ok elements=${Array.isArray(parsed?.elements) ? parsed.elements.length : 'none'} rawLen=${raw.length}`;
-    } catch (error) {
-      return `json parse failed: ${(error as Error).message} rawLen=${raw.length} tail=${json.slice(-40)}`;
-    }
-  } catch (error) {
-    return `describe failed: ${(error as Error).message}`;
-  }
-};

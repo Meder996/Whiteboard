@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import clsx from 'clsx';
 import { Copy, MoreHorizontal, Pencil, Trash2, Share2, Check, X } from 'lucide-react';
 
@@ -37,12 +38,60 @@ export function BoardCard({ board, onRename, onDuplicate, onDelete }: BoardCardP
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(board.title);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  // The menu is portalled to <body> so the card's rounded, overflow-hidden frame
+  // can never clip it (which used to make Rename/Duplicate/Delete unreachable).
+  useEffect(() => {
+    if (!menuOpen) {
+      setMenuPos(null);
+      return undefined;
+    }
+    const place = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = 192;
+      const height = menuRef.current?.offsetHeight ?? 190;
+      const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8);
+      const openUp = rect.bottom + height + 8 > window.innerHeight;
+      const top = Math.max(8, openUp ? rect.top - height - 6 : rect.bottom + 6);
+      setMenuPos({ top, left });
+    };
+    place();
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
 
   const commitRename = async () => {
     setRenaming(false);
     const next = draft.trim();
     if (next && next !== board.title) await onRename(board.id, next);
     else setDraft(board.title);
+  };
+
+  const requestDelete = () => {
+    setMenuOpen(false);
+    // Hand the request to the dashboard, which asks for confirmation and owns
+    // the actual IndexedDB deletion.
+    void onDelete(board.id);
   };
 
   return (
@@ -117,6 +166,7 @@ export function BoardCard({ board, onRename, onDuplicate, onDelete }: BoardCardP
 
         <div className="relative shrink-0">
           <button
+            ref={triggerRef}
             type="button"
             className="btn-ghost p-1.5"
             onClick={() => setMenuOpen((open) => !open)}
@@ -126,60 +176,58 @@ export function BoardCard({ board, onRename, onDuplicate, onDelete }: BoardCardP
           >
             <MoreHorizontal className="h-4 w-4" aria-hidden />
           </button>
-          {menuOpen ? (
-            <>
-              <button
-                type="button"
-                className="fixed inset-0 z-30 cursor-default"
-                aria-label="Close actions menu"
-                onClick={() => setMenuOpen(false)}
-              />
-              <div role="menu" className="panel absolute right-0 top-full z-40 mt-1 w-44 animate-pop-in p-1.5">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="menu-item"
-                  onClick={() => {
-                    setRenaming(true);
-                    setMenuOpen(false);
-                  }}
+          {menuOpen && menuPos
+            ? createPortal(
+                <div
+                  ref={menuRef}
+                  role="menu"
+                  aria-label={`Actions for ${board.title}`}
+                  className="panel fixed z-[80] w-48 animate-pop-in p-1.5"
+                  style={{ top: menuPos.top, left: menuPos.left }}
                 >
-                  <Pencil className="h-3.5 w-3.5" aria-hidden /> Rename
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="menu-item"
-                  onClick={() => {
-                    void onDuplicate(board.id);
-                    setMenuOpen(false);
-                  }}
-                >
-                  <Copy className="h-3.5 w-3.5" aria-hidden /> Duplicate
-                </button>
-                <Link
-                  role="menuitem"
-                  href={`/board/${board.id}`}
-                  className="menu-item"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <Share2 className="h-3.5 w-3.5" aria-hidden /> Open & share
-                </Link>
-                <div className="my-1 border-t border-[var(--line)]" />
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={clsx('menu-item text-[var(--danger)] hover:bg-red-500/10')}
-                  onClick={() => {
-                    void onDelete(board.id);
-                    setMenuOpen(false);
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden /> Delete
-                </button>
-              </div>
-            </>
-          ) : null}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="menu-item"
+                    onClick={() => {
+                      setRenaming(true);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" aria-hidden /> Rename
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="menu-item"
+                    onClick={() => {
+                      void onDuplicate(board.id);
+                      setMenuOpen(false);
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" aria-hidden /> Duplicate
+                  </button>
+                  <Link
+                    role="menuitem"
+                    href={`/board/${board.id}`}
+                    className="menu-item"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    <Share2 className="h-3.5 w-3.5" aria-hidden /> Open &amp; share
+                  </Link>
+                  <div className="my-1 border-t border-[var(--line)]" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="menu-item text-[var(--danger)] hover:bg-red-500/10"
+                    onClick={requestDelete}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden /> Delete
+                  </button>
+                </div>,
+                document.body,
+              )
+            : null}
         </div>
       </div>
     </article>

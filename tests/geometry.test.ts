@@ -8,6 +8,8 @@ import {
   rotatePoint,
   screenToWorld,
   selectionBounds,
+  smoothPath,
+  simplifyPoints,
   worldToScreen,
   zoomAtPoint,
 } from '@/lib/geometry';
@@ -131,5 +133,39 @@ describe('geometry', () => {
       width: 10,
       height: 10,
     });
+  });
+});
+
+describe('freehand smoothing', () => {
+  it('emits quadratic curves rather than a faceted polyline', () => {
+    const points = [
+      { x: 0, y: 0 },
+      { x: 10, y: 6 },
+      { x: 20, y: 0 },
+      { x: 30, y: -6 },
+      { x: 40, y: 0 },
+    ];
+    const d = smoothPath(points);
+    expect(d.startsWith(`M 0 0`)).toBe(true);
+    expect(d.match(/Q/g)).toHaveLength(3);
+    // Ends exactly on the last captured sample, so ink stays under the finger.
+    expect(d.endsWith('L 40 0')).toBe(true);
+  });
+
+  it('rounds coordinates and drops duplicate samples', () => {
+    const d = smoothPath([
+      { x: 0, y: 0 },
+      { x: 0.05, y: 0.05 },
+      { x: 10.123456, y: 20.987654 },
+      { x: 20, y: 30 },
+    ]);
+    expect(d).toContain('10.12 20.99');
+    expect(d).not.toContain('0.05');
+  });
+
+  it('handles degenerate strokes without throwing', () => {
+    expect(smoothPath([])).toBe('');
+    expect(smoothPath([{ x: 4, y: 4 }])).toContain('l 0.01 0');
+    expect(smoothPath([{ x: 0, y: 0 }, { x: 5, y: 5 }])).toBe('M 0 0 L 5 5');
   });
 });

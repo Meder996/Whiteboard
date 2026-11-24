@@ -49,7 +49,8 @@ export function Minimap({ elements, camera, viewport, onNavigate, selectedIds, c
   }, [elements, camera, viewport]);
 
   const handleNavigate = useCallback(
-    (event: React.MouseEvent<SVGSVGElement>) => {
+    (event: React.PointerEvent<SVGSVGElement>) => {
+      if (event.button !== 0) return;
       const rect = svgRef.current?.getBoundingClientRect();
       if (!rect) return;
       const localX = event.clientX - rect.left;
@@ -87,8 +88,8 @@ export function Minimap({ elements, camera, viewport, onNavigate, selectedIds, c
         height={MINIMAP_HEIGHT}
         role="img"
         aria-label="Board minimap. Click to jump to a location."
-        className="cursor-crosshair rounded-md bg-[var(--surface-sunken)]"
-        onClick={handleNavigate}
+        className="cursor-crosshair touch-none rounded-md bg-[var(--surface-sunken)]"
+        onPointerDown={handleNavigate}
       >
         {elements.map((element) => {
           const isSelected = selectedIds.includes(element.id);

@@ -18,7 +18,7 @@ export function ZoomControls() {
   const percent = Math.round(camera.zoom * 100);
 
   return (
-    <div className="panel relative flex items-center p-0.5">
+    <div className="panel relative flex touch-manipulation items-center p-0.5">
       <button type="button" className="btn-ghost px-2 py-1.5" onClick={zoomOut} aria-label="Zoom out" title="Zoom out — ⌘−">
         <Minus className="h-4 w-4" aria-hidden />
       </button>

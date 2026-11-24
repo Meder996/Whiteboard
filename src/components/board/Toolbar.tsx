@@ -82,8 +82,10 @@ export function Toolbar({ onUploadClick }: ToolbarProps) {
   const anyGrouped = selected.some((element) => element.groupId);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center px-2 pt-3">
-      <div className="pointer-events-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/95 p-1.5 shadow-float backdrop-blur-md no-scrollbar">
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center px-1.5 pt-2 sm:px-2 sm:pt-3">
+      {/* Phones get a wrapping, two-row bar so every tool is reachable with a
+          thumb and the row never hides behind a horizontal scroller. */}
+      <div className="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-0.5 rounded-2xl border border-[var(--line)] bg-[var(--surface-raised)]/95 p-1 shadow-float backdrop-blur-md sm:flex-nowrap sm:gap-1 sm:p-1.5">
         {TOOLS.map((item, index) => {
           const previous = TOOLS[index - 1];
           const showDivider = previous && previous.group !== item.group;
@@ -228,7 +230,9 @@ export function StyleControls({ compact = false }: { compact?: boolean } = {}) {
     <div
       className={clsx(
         'pointer-events-auto flex gap-1 bg-[var(--surface-raised)]',
-        compact ? 'flex-row items-center rounded-xl border border-[var(--line)] px-1 py-0.5 shadow-float' : 'flex-col border-r border-[var(--line)] p-2',
+        compact
+          ? 'flex-row items-center gap-0.5 rounded-xl border border-[var(--line)] px-1 py-0.5 shadow-float'
+          : 'flex-col border-r border-[var(--line)] p-2',
       )}
     >
       <Popover

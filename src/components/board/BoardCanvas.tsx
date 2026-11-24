@@ -34,7 +34,7 @@ import { RenderElement, connectorPath, resolveEndpoint } from '@/lib/render';
 import { createElement } from '@/lib/elements';
 import { CanvasBackground } from './CanvasBackground';
 import { TextEditor } from './TextEditor';
-import type { BoardElement, ElementBinding, Point } from '@/lib/types';
+import type { BoardElement, Camera, ElementBinding, Point } from '@/lib/types';
 
 type Interaction =
   | { kind: 'none' }
@@ -69,10 +69,43 @@ interface BoardCanvasProps {
 
 const GRID_STEP = 24;
 
+/**
+ * Pointer moves can arrive in bursts (and webkit only reports the newest one),
+ * so fold in any coalesced events the browser captured between frames. That
+ * gives smooth, evenly spaced ink instead of long straight chords.
+ */
+const pointerSamples = (
+  event: React.PointerEvent,
+  toWorld: (point: { clientX: number; clientY: number }) => Point,
+): Point[] => {
+  const native = event.nativeEvent as PointerEvent & { getCoalescedEvents?: () => PointerEvent[] };
+  const coalesced =
+    typeof native.getCoalescedEvents === 'function' ? native.getCoalescedEvents() : [];
+  const list = coalesced.length > 0 ? coalesced : [{ clientX: event.clientX, clientY: event.clientY }];
+  const samples = list.map((item) => toWorld({ clientX: item.clientX, clientY: item.clientY }));
+  const last = samples[samples.length - 1];
+  samples[samples.length - 1] = { x: last.x, y: last.y };
+  return samples;
+};
+
 export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const interaction = useRef<Interaction>({ kind: 'none' });
+  // The pointer that owns the current gesture. Extra fingers (or a second
+  // mouse button) are ignored so they cannot hijack an in-progress draw,
+  // move, resize or pan.
+  const activePointer = useRef<number | null>(null);
+  // Two-finger pinch: distance + midpoint at gesture start, and camera snapshot.
+  const pinch = useRef<{
+    ids: [number, number];
+    distance: number;
+    midpoint: Point;
+    camera: Camera;
+    /** Resolves the current gesture cleanly (commit or discard). */
+    cancel: () => void;
+  } | null>(null);
+  const pointers = useRef<Map<number, Point>>(new Map());
   const [guides, setGuides] = useState<GuideLine[]>([]);
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [connectorPreview, setConnectorPreview] = useState<{ start: Point; end: Point } | null>(null);
@@ -172,6 +205,50 @@ export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (event.button === 2) return;
+
+    // Remember every finger that is down so we can detect pinch gestures.
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.current.size === 2 && interaction.current.kind !== 'none') {
+      // A second finger means the user wants to pinch, not to keep drawing.
+      const ids = Array.from(pointers.current.keys()).slice(0, 2) as [number, number];
+      const [a, b] = ids.map((id) => pointers.current.get(id)!);
+      const state = useEditor.getState();
+      if (state.editingId) state.setEditing(null);
+
+      const outgoing: Interaction = interaction.current;
+      const settle = () => {
+        if (outgoing.kind === 'draw' || outgoing.kind === 'create') {
+          state.endGesture();
+          const element = useEditor.getState().elements.find((item) => item.id === outgoing.id);
+          if (outgoing.kind === 'draw' && (!element || (element.points?.length ?? 0) < 2)) {
+            state.removeElements([outgoing.id]);
+          }
+        } else if ((outgoing as Interaction).kind !== 'none') {
+          state.endGesture();
+        }
+        interaction.current = { kind: 'none' };
+        setMarquee(null);
+        setGuides([]);
+        setConnectorPreview(null);
+        activePointer.current = null;
+      };
+      settle();
+
+      pinch.current = {
+        ids,
+        distance: Math.hypot(b.x - a.x, b.y - a.y),
+        midpoint: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        camera: useEditor.getState().camera,
+        cancel: settle,
+      };
+      return;
+    }
+
+    if (activePointer.current !== null && activePointer.current !== event.pointerId) return;
+    if (interaction.current.kind !== 'none') return;
+    activePointer.current = event.pointerId;
+
     const state = useEditor.getState();
     if (state.editingId) state.setEditing(null);
 
@@ -354,6 +431,36 @@ export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
   };
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (pointers.current.has(event.pointerId)) {
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    // Two-finger pinch zoom + pan (touch screens and trackpads that report
+    // two pointers). Uses the midpoint so pinch feels anchored to the fingers.
+    if (pinch.current) {
+      const [a, b] = pinch.current.ids.map((id) => pointers.current.get(id));
+      if (!a || !b) return;
+      const spread = Math.hypot(b.x - a.x, b.y - a.y);
+      const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const state = useEditor.getState();
+      const rect = svgRef.current?.getBoundingClientRect();
+      const ratio = pinch.current.distance > 0 ? spread / pinch.current.distance : 1;
+      const zoom = clamp(pinch.current.camera.zoom * ratio, MIN_ZOOM, MAX_ZOOM);
+      const anchor = rect
+        ? { x: midpoint.x - rect.left, y: midpoint.y - rect.top }
+        : { x: state.viewport.width / 2, y: state.viewport.height / 2 };
+      const camera = zoomAtPoint(pinch.current.camera, zoom, anchor);
+      const startMid = pinch.current.midpoint;
+      state.setCamera({
+        ...camera,
+        x: camera.x + (midpoint.x - startMid.x),
+        y: camera.y + (midpoint.y - startMid.y),
+      });
+      return;
+    }
+
+    if (activePointer.current !== null && activePointer.current !== event.pointerId) return;
+
     const state = useEditor.getState();
     const world = getWorld(event);
     const active = interaction.current;
@@ -447,9 +554,14 @@ export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
       case 'draw': {
         const element = state.elements.find((item) => item.id === active.id);
         if (!element) return;
-        const last = active.points[active.points.length - 1];
-        if (distance(last, world) * camera.zoom < 2) return;
-        active.points.push(world);
+        // Fold in coalesced samples so fast strokes are not reduced to a few
+        // long chords, then de-duplicate sub-pixel noise only.
+        for (const sample of pointerSamples(event, getWorld)) {
+          const previous = active.points[active.points.length - 1];
+          if (distance(previous, sample) * camera.zoom < 0.75) continue;
+          active.points.push(sample);
+        }
+        if (active.points.length < 2) return;
         const localPoints = active.points.map((point) => ({ x: point.x - element.x, y: point.y - element.y }));
         const xs = localPoints.map((point) => point.x);
         const ys = localPoints.map((point) => point.y);
@@ -513,6 +625,21 @@ export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
   };
 
   const onPointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
+    pointers.current.delete(event.pointerId);
+    if (pinch.current) {
+      if (pointers.current.size >= 2) return;
+      pinch.current = null;
+      if (pointers.current.size === 1) {
+        // The remaining finger continues as a pan rather than a surprise draw.
+        const [remaining] = Array.from(pointers.current.values());
+        const live = useEditor.getState();
+        interaction.current = { kind: 'pan', start: remaining, camera: live.camera };
+        activePointer.current = Array.from(pointers.current.keys())[0];
+      }
+      return;
+    }
+    if (activePointer.current !== null && activePointer.current !== event.pointerId) return;
+    activePointer.current = null;
     const state = useEditor.getState();
     const active = interaction.current;
     const world = getWorld(event);
@@ -579,7 +706,7 @@ export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
     }
   };
 
-  const onDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
+  const openEditorAt = (event: { clientX: number; clientY: number }) => {
     if (readOnly) return;
     const world = getWorld(event);
     const state = useEditor.getState();
@@ -606,6 +733,23 @@ export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
     }
   };
 
+  // A double tap on touch screens does not reliably fire dblclick (and often
+  // triggers browser zoom), so detect two taps within 320 ms on the same spot
+  // ourselves and open the same editor.
+  const lastTap = useRef<{ at: number; x: number; y: number } | null>(null);
+  const onTapForEditing = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.pointerType !== 'touch' || event.button !== 0 || pinch.current) return;
+    const now = Date.now();
+    const previous = lastTap.current;
+    lastTap.current = { at: now, x: event.clientX, y: event.clientY };
+    if (!previous) return;
+    const withinTime = now - previous.at < 320;
+    const withinDistance = Math.hypot(event.clientX - previous.x, event.clientY - previous.y) < 24;
+    if (!withinTime || !withinDistance) return;
+    lastTap.current = null;
+    openEditorAt(event);
+  };
+
   // Live element being edited through the inline text editor.
   const editingElement = useMemo(() => elements.find((element) => element.id === editingId) ?? null, [elements, editingId]);
 
@@ -624,10 +768,11 @@ export function BoardCanvas({ onZoomChange }: BoardCanvasProps) {
         aria-label="Whiteboard canvas"
         tabIndex={0}
         onPointerDown={onPointerDown}
+        onPointerUpCapture={onTapForEditing}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        onDoubleClick={onDoubleClick}
+        onDoubleClick={(event) => openEditorAt(event)}
         onContextMenu={(event) => event.preventDefault()}
       >
         <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`}>

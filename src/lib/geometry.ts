@@ -86,6 +86,60 @@ export const boundsOfPoints = (points: Point[]): Rect => {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 };
 
+/**
+ * Drop samples that are closer together than `tolerance`, which keeps the
+ * smoothed path light without letting corners creep back in.
+ */
+export const simplifyPoints = (points: Point[], tolerance = 0.6): Point[] => {
+  if (points.length <= 2) return points.slice();
+  const kept: Point[] = [points[0]];
+  for (let index = 1; index < points.length - 1; index += 1) {
+    if (distance(kept[kept.length - 1], points[index]) >= tolerance) kept.push(points[index]);
+  }
+  kept.push(points[points.length - 1]);
+  return kept;
+};
+
+const formatNumber = (value: number) => {
+  const rounded = Math.round(value * 100) / 100;
+  return Object.is(rounded, -0) ? '0' : String(rounded);
+};
+
+/**
+ * Convert a captured freehand point list into a smooth SVG path.
+ *
+ * Raw pointer samples joined with straight lines look visibly faceted. A
+ * midpoint quadratic spline (one curve per pair of samples, with each sample
+ * as the control point) is C1-continuous, cheap, and never overshoots the
+ * captured stroke, so the ink follows the finger exactly — just rounder.
+ */
+export const smoothPath = (points: Point[], closed = false): string => {
+  const list = simplifyPoints(points);
+  if (!list.length) return '';
+  if (list.length === 1) {
+    const point = list[0];
+    return `M ${formatNumber(point.x)} ${formatNumber(point.y)} l 0.01 0`;
+  }
+  if (list.length === 2) {
+    const [a, b] = list;
+    return `M ${formatNumber(a.x)} ${formatNumber(a.y)} L ${formatNumber(b.x)} ${formatNumber(b.y)}`;
+  }
+
+  const parts = [`M ${formatNumber(list[0].x)} ${formatNumber(list[0].y)}`];
+  for (let index = 1; index < list.length - 1; index += 1) {
+    const current = list[index];
+    const next = list[index + 1];
+    const mid = { x: (current.x + next.x) / 2, y: (current.y + next.y) / 2 };
+    parts.push(
+      `Q ${formatNumber(current.x)} ${formatNumber(current.y)} ${formatNumber(mid.x)} ${formatNumber(mid.y)}`,
+    );
+  }
+  const last = list[list.length - 1];
+  parts.push(`L ${formatNumber(last.x)} ${formatNumber(last.y)}`);
+  if (closed) parts.push('Z');
+  return parts.join(' ');
+};
+
 export const unionRects = (rects: Rect[]): Rect => {
   if (!rects.length) return { x: 0, y: 0, width: 0, height: 0 };
   let minX = Infinity;

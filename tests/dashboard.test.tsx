@@ -134,3 +134,38 @@ describe('dashboard', () => {
     });
   });
 });
+
+describe('dashboard delete flow', () => {
+  it('renders the actions menu outside the clipped card so delete is reachable', async () => {
+    await seed();
+    renderDashboard();
+    const user = userEvent.setup();
+    const card = (await screen.findByText('Alpha retro')).closest('article') as HTMLElement;
+    await user.click(within(card).getByLabelText('Actions for Alpha retro'));
+
+    const menu = await screen.findByRole('menu', { name: /actions for alpha retro/i });
+    // The card frame is overflow-hidden; a menu inside it would be clipped and
+    // unusable on touch devices. It must live in a portal on <body>.
+    expect(card.contains(menu)).toBe(false);
+    expect(document.body.contains(menu)).toBe(true);
+    expect(within(menu).getByRole('menuitem', { name: /delete/i })).toBeVisible();
+  });
+
+  it('removes the card and the stored board after confirming delete', async () => {
+    await seed();
+    renderDashboard();
+    const user = userEvent.setup();
+    const card = (await screen.findByText('Alpha retro')).closest('article') as HTMLElement;
+    await user.click(within(card).getByLabelText('Actions for Alpha retro'));
+    await user.click(screen.getByRole('menuitem', { name: /delete/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /delete board/i }));
+
+    await waitFor(() => expect(screen.queryByText('Alpha retro')).not.toBeInTheDocument());
+    await waitFor(async () => {
+      const boards = await listBoards();
+      expect(boards.map((board) => board.id)).toEqual(['board_beta']);
+    });
+  });
+});

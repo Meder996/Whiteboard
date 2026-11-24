@@ -219,3 +219,80 @@ describe('camera helpers used by the canvas', () => {
     expect(screenToWorld(cursor, next)).toEqual(screenToWorld(cursor, camera));
   });
 });
+
+describe('touch and ink quality', () => {
+  it('renders freehand strokes as smooth curves instead of a raw polyline', () => {
+    const { svg, container } = setupCanvas();
+    act(() => useEditor.getState().setTool('pen'));
+    fireEvent.pointerDown(svg, pointer('down', 60, 60));
+    for (let step = 1; step <= 12; step += 1) {
+      fireEvent.pointerMove(svg, pointer('move', 60 + step * 14, 60 + Math.sin(step / 2) * 22));
+    }
+    fireEvent.pointerUp(svg, pointer('up', 240, 60));
+
+    const stroke = useEditor.getState().elements.find((element) => element.type === 'draw');
+    expect(stroke).toBeTruthy();
+    expect(stroke!.points!.length).toBeGreaterThan(6);
+
+    // The drawn path must contain curve commands, not only line segments.
+    const paths = Array.from(container.querySelectorAll('path'));
+    const drawn = paths.find((path) => (path.getAttribute('d') ?? '').includes('Q'));
+    expect(drawn).toBeTruthy();
+    // Every segment between samples is a quadratic curve; only the closing
+    // tail may be a straight line.
+    expect(drawn!.getAttribute('d')!.match(/ Q /g)!.length).toBeGreaterThan(4);
+  });
+
+  it('ignores a second finger so it cannot scribble into an active stroke', () => {
+    const { svg } = setupCanvas();
+    act(() => useEditor.getState().setTool('pen'));
+
+    fireEvent.pointerDown(svg, pointer('down', 100, 100, { pointerId: 1 }));
+    fireEvent.pointerMove(svg, pointer('move', 160, 140, { pointerId: 1 }));
+    // A second finger lands mid-stroke and moves far away.
+    fireEvent.pointerDown(svg, pointer('down', 400, 300, { pointerId: 2 }));
+    fireEvent.pointerMove(svg, pointer('move', 700, 520, { pointerId: 2 }));
+    fireEvent.pointerUp(svg, pointer('up', 700, 520, { pointerId: 2 }));
+    fireEvent.pointerMove(svg, pointer('move', 200, 150, { pointerId: 1 }));
+    fireEvent.pointerUp(svg, pointer('up', 200, 150, { pointerId: 1 }));
+
+    const strokes = useEditor.getState().elements.filter((element) => element.type === 'draw');
+    expect(strokes).toHaveLength(1);
+    // The stray finger never appears in the stroke geometry.
+    expect(strokes[0].width).toBeLessThan(200);
+    expect(strokes[0].height).toBeLessThan(200);
+  });
+
+  it('pinch-zooms with two fingers', () => {
+    const { svg } = setupCanvas();
+    act(() => useEditor.getState().setTool('select'));
+    const before = useEditor.getState().camera.zoom;
+
+    fireEvent.pointerDown(svg, pointer('down', 300, 300, { pointerId: 1, pointerType: 'touch' }));
+    fireEvent.pointerDown(svg, pointer('down', 500, 300, { pointerId: 2, pointerType: 'touch' }));
+    fireEvent.pointerMove(svg, pointer('move', 200, 300, { pointerId: 1, pointerType: 'touch' }));
+    fireEvent.pointerMove(svg, pointer('move', 600, 300, { pointerId: 2, pointerType: 'touch' }));
+
+    // Fingers went from 200px apart to 400px apart → roughly 2× zoom.
+    expect(useEditor.getState().camera.zoom).toBeGreaterThan(before * 1.6);
+    expect(useEditor.getState().elements).toHaveLength(0);
+  });
+
+  it('opens the text editor on a double tap', () => {
+    const { svg } = setupCanvas();
+    const sticky = createSticky(120, 120, 'Double tap me');
+    act(() => useEditor.getState().addElements([sticky], { select: false }));
+    act(() => useEditor.getState().setTool('select'));
+
+    act(() => {
+      fireEvent.pointerDown(svg, pointer('down', 180, 180, { pointerId: 1, pointerType: 'touch' }));
+      fireEvent.pointerUp(svg, pointer('up', 180, 180, { pointerId: 1, pointerType: 'touch' }));
+    });
+    act(() => {
+      fireEvent.pointerDown(svg, pointer('down', 182, 181, { pointerId: 1, pointerType: 'touch' }));
+      fireEvent.pointerUp(svg, pointer('up', 182, 181, { pointerId: 1, pointerType: 'touch' }));
+    });
+
+    expect(useEditor.getState().editingId).toBe(sticky.id);
+  });
+});
