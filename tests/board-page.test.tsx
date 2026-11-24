@@ -31,6 +31,28 @@ const renderPage = async (id: string) => {
   return result!;
 };
 
+describe('board page SSR', () => {
+  it('server-renders the board route without touching window', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { createElement, Suspense } = await import('react');
+    let html = '';
+    try {
+      html = renderToString(
+        createElement(
+          Suspense,
+          { fallback: createElement('p', null, 'ssr-fallback') },
+          createElement(BoardPage, { params: Promise.resolve({ id: 'ssr_board' }) }),
+        ),
+      );
+    } catch (error) {
+      console.log('SSR THREW:', (error as Error).message.slice(0, 400));
+      throw error;
+    }
+    console.log('SSR HTML:', html.slice(0, 300));
+    expect(html.length).toBeGreaterThan(0);
+  });
+});
+
 describe('board page (integration)', () => {
   it('loads a saved board and renders its elements on the canvas', async () => {
     const elements = buildQuickStart();
