@@ -1,0 +1,6 @@
+.tmp
+coverage
+tests
+scripts
+*.md
+!README.md
