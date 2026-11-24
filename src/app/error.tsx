@@ -28,10 +28,11 @@ export default function GlobalError({
         <p className="mt-1.5 text-sm text-[var(--ink-muted)]">
           Your boards are saved locally, so nothing was lost. Reloading usually fixes this.
         </p>
-        <p className="mt-2 text-xs text-[var(--ink-faint)]" data-testid="error-detail">
-          {error?.message ? error.message.slice(0, 300) : 'Unknown error'}
-          {error?.digest ? ` · ${error.digest}` : ''}
-        </p>
+        <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--surface-sunken)] p-2 text-left text-[10px] leading-relaxed text-[var(--ink-faint)]" data-testid="error-detail">
+{`${error?.message ?? 'Unknown error'}
+${error?.digest ? `digest: ${error.digest}` : ''}
+${error?.stack?.slice(0, 1200) ?? ''}`}
+        </pre>
         <button type="button" className="btn-primary mt-4" onClick={reset}>
           Try again
         </button>
