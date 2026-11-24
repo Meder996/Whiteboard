@@ -13,8 +13,10 @@ is fully under our control.
 ## ✨ Features
 
 > **Recent fixes:** board deletion from the dashboard menu works on every screen size, freehand
-> strokes are smoothly curved instead of faceted, and the whole editor is finger-friendly
-> (pinch-zoom, double-tap editing, no stray second-finger strokes).
+> strokes are smoothly curved instead of faceted, the whole editor is finger-friendly
+> (pinch-zoom, double-tap editing, no stray second-finger strokes), image upload accepts files
+> from the picker, drag-and-drop and the clipboard, and saving is explicit (`⌘/Ctrl+S`,
+> "Save & exit") instead of writing to disk every second.
 
 ### Canvas
 - **Infinite, pannable, zoomable canvas** with trackpad pan, `⌘/Ctrl + scroll` zoom-at-pointer,
@@ -29,6 +31,9 @@ is fully under our control.
 - **Styling:** stroke & fill colours (with custom colour pickers), stroke width, dashed/dotted
   lines, hachure fill, opacity, three font families, seven sizes, bold/italic, alignment.
 - **Sticky notes** with eight paper colours and inline editing.
+- **Images:** upload from the picker, drag-and-drop onto the canvas, or paste a screenshot with
+  `⌘/Ctrl+V` (PNG, JPEG, WebP, GIF up to 6 MB; type is sniffed from the bytes when the browser
+  reports no MIME type). Images move, resize, rotate and export like any other object.
 - **Connectors** attach to a specific side/offset of a shape and follow it when it moves,
   resizes, or rotates. Deleting a shape removes its dangling connectors.
 - **Snapping + alignment guides** while dragging (hold `Alt` to disable), marquee + shift multi-select.
@@ -40,7 +45,10 @@ is fully under our control.
   duplicate, and delete (with confirmation).
 - **Templates:** blank, quick-start tour, brainstorm, flowchart, kanban, mind map, meeting notes.
 - **Board header:** inline title editing, canvas background presets + custom colour, light/dark theme.
-- **Autosave** with a visible save state (`Saved · 14:32`, `Saving…`, `Unsaved changes`, `Save failed`).
+- **Word-style saving:** edits stay in memory and show **Unsaved changes** with a **Save** button /
+  `⌘/Ctrl+S`. Leaving the board (header ←, tab close, tab switch) flushes the document first, and a
+  quiet background save runs after 6 s of inactivity. The badge shows
+  `Saved · 14:32`, `Saving…`, `Unsaved changes`, `Save failed`.
 - Boards survive reloads and browser restarts.
 
 ### Collaboration (honest scope — please read)
@@ -86,7 +94,7 @@ src/
 │  ├─ ThemeProvider.tsx     Persisted light/dark theme
 │  └─ Toast.tsx             Notification system
 ├─ hooks/
-│  ├─ useEditorSession.ts   Load → hydrate → debounced autosave → share-link mode
+│  ├─ useEditorSession.ts   Load → hydrate → explicit/idle/exit saving → share mode
 │  └─ useKeyboardShortcuts.ts
 └─ lib/
    ├─ types.ts              Serialisable document model (Board, BoardElement, bindings…)
@@ -113,7 +121,10 @@ src/
 - **History is snapshot-based** (capped at 100 entries) with gesture batching: a whole drag or
   freehand stroke is one undo step. `beginGesture()` snapshots before an interaction mutates; child
   mutations during a gesture don't push more entries.
-- **Autosave is debounced (450 ms)** and separates "content dirty" from camera-only changes.
+- **Saving is explicit, with an idle safety net:** `⌘/Ctrl+S` / the Save button writes immediately,
+  an idle save runs 6 s after the last edit, and exit paths (`beforeunload`, `pagehide`,
+  `visibilitychange`, unmount) flush synchronously. Content-dirty is tracked separately from
+  camera-only changes, so panning never marks a board unsaved.
 
 ### Data model (abridged)
 ```ts

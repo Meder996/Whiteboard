@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useEditor } from '@/lib/store';
 import type { Tool } from '@/lib/types';
 
@@ -32,13 +32,29 @@ const isTypingTarget = (target: EventTarget | null) => {
   );
 };
 
-export function useKeyboardShortcuts({ onShortcuts }: { onShortcuts: () => void }) {
+export function useKeyboardShortcuts({
+  onShortcuts,
+  onSave,
+}: {
+  onShortcuts: () => void;
+  onSave?: () => void;
+}) {
+  // Keep the latest callback without re-binding the listener on every render.
+  const saveRef = useRef(onSave);
+  saveRef.current = onSave;
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const state = useEditor.getState();
+      const mod = event.metaKey || event.ctrlKey;
+
+      // Save works even while typing in the inline editor.
+      if (mod && !event.altKey && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        saveRef.current?.();
+        return;
+      }
       if (isTypingTarget(event.target) || state.editingId) return;
 
-      const mod = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
 
       // Modifier combos

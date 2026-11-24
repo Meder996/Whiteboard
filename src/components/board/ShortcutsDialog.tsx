@@ -18,6 +18,14 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     ],
   },
   {
+    title: 'File',
+    items: [
+      ['⌘ / Ctrl + S', 'Save now'],
+      ['← (header)', 'Save & exit to all boards'],
+      ['⌘ / Ctrl + V', 'Paste an image from the clipboard'],
+    ],
+  },
+  {
     title: 'Edit',
     items: [
       ['⌘ / Ctrl + Z', 'Undo'],

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import clsx from 'clsx';
 import {
   ArrowLeft,
@@ -35,6 +34,8 @@ interface BoardHeaderProps {
   onPrint: () => void;
   onShortcuts: () => void;
   onRename: (title: string) => void;
+  onSave: () => void;
+  onSaveAndExit: () => void;
   collaboratorCount?: number;
 }
 
@@ -46,6 +47,14 @@ const SAVE_LABELS = {
   offline: 'Offline — stored locally',
 };
 
+const SAVE_TITLES = {
+  saved: 'All changes saved to this browser',
+  saving: 'Saving to this browser…',
+  dirty: 'Press ⌘/Ctrl+S or click Save to store your changes',
+  error: 'The last save failed — click Save to retry',
+  offline: 'Saved locally; the browser reports it is offline',
+};
+
 export function BoardHeader({
   onShare,
   onExportPng,
@@ -55,6 +64,8 @@ export function BoardHeader({
   onPrint,
   onShortcuts,
   onRename,
+  onSave,
+  onSaveAndExit,
   collaboratorCount = 0,
 }: BoardHeaderProps) {
   const title = useEditor((state) => state.title);
@@ -83,14 +94,16 @@ export function BoardHeader({
 
   return (
     <header className="no-print z-30 flex h-14 shrink-0 items-center gap-2 border-b border-[var(--line)] bg-[var(--surface-raised)] px-2 sm:px-3">
-      <Link
-        href="/"
+      <button
+        type="button"
         className="btn-ghost shrink-0 px-2"
-        aria-label="Back to boards"
-        title="All boards"
+        aria-label="Save and return to all boards"
+        title="Save & exit — all boards"
+        onClick={onSaveAndExit}
+        disabled={readOnly}
       >
         <ArrowLeft className="h-4 w-4" aria-hidden />
-      </Link>
+      </button>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white shadow-sm">
@@ -131,7 +144,7 @@ export function BoardHeader({
             </button>
           )}
           <div className="flex items-center gap-1.5 px-1.5" aria-live="polite">
-            <SaveBadge state={saveState} lastSavedAt={lastSavedAt} />
+            <SaveBadge state={saveState} lastSavedAt={lastSavedAt} onSave={onSave} readOnly={readOnly} />
             {readOnly ? (
               <span className="text-[11px] font-medium text-[var(--warning)]">View only</span>
             ) : null}
@@ -249,6 +262,19 @@ export function BoardHeader({
           {theme === 'dark' ? <Sun className="h-4 w-4" aria-hidden /> : <Moon className="h-4 w-4" aria-hidden />}
         </button>
 
+        <button
+          type="button"
+          onClick={onSave}
+          className="btn-outline ml-1 px-2.5"
+          aria-label="Save board"
+          title="Save — ⌘/Ctrl+S"
+          data-testid="save-button"
+          disabled={readOnly}
+        >
+          <Check className="h-4 w-4" aria-hidden />
+          <span className="hidden sm:inline">Save</span>
+        </button>
+
         <button type="button" onClick={onShare} className="btn-primary ml-1 px-2.5 sm:px-3" aria-label="Share board">
           {collaboratorCount > 0 ? <Users className="h-4 w-4" aria-hidden /> : <Share2 className="h-4 w-4" aria-hidden />}
           <span className="hidden sm:inline">Share</span>
@@ -263,15 +289,30 @@ export function BoardHeader({
   );
 }
 
-function SaveBadge({ state, lastSavedAt }: { state: keyof typeof SAVE_LABELS; lastSavedAt: number | null }) {
+function SaveBadge({
+  state,
+  lastSavedAt,
+  onSave,
+  readOnly,
+}: {
+  state: keyof typeof SAVE_LABELS;
+  lastSavedAt: number | null;
+  onSave: () => void;
+  readOnly: boolean;
+}) {
   const Icon = state === 'saving' ? Loader2 : state === 'error' || state === 'offline' ? CloudOff : Check;
   const time = lastSavedAt
     ? new Date(lastSavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
   return (
-    <span
+    <button
+      type="button"
+      onClick={onSave}
+      disabled={readOnly}
+      title={SAVE_TITLES[state]}
+      aria-label={`${SAVE_LABELS[state]}. Save now.`}
       className={clsx(
-        'inline-flex items-center gap-1 text-[11px] font-medium',
+        'inline-flex items-center gap-1 rounded px-0.5 text-[11px] font-medium transition-colors hover:underline disabled:no-underline',
         state === 'error' ? 'text-[var(--danger)]' : state === 'dirty' ? 'text-[var(--warning)]' : 'text-[var(--ink-faint)]',
       )}
       data-testid="save-status"
@@ -279,7 +320,7 @@ function SaveBadge({ state, lastSavedAt }: { state: keyof typeof SAVE_LABELS; la
       <Icon className={clsx('h-3 w-3', state === 'saving' && 'animate-spin')} aria-hidden />
       {SAVE_LABELS[state]}
       {state === 'saved' && time ? <span className="text-[var(--ink-faint)]">· {time}</span> : null}
-    </span>
+    </button>
   );
 }
 

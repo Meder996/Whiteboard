@@ -30,12 +30,53 @@ const loadImageSize = (src: string) =>
     image.src = src;
   });
 
-export const validateImageFile = (file: File): string | null => {
-  if (!ACCEPTED_IMAGE_TYPES.includes(file.type as (typeof ACCEPTED_IMAGE_TYPES)[number])) {
-    if (file.type === 'image/svg+xml') {
+/**
+ * Some browsers and OS drag sources hand over an empty or generic MIME type
+ * (notably Linux/webview drops, and clipboard images from macOS Preview).
+ * Sniff the magic bytes so a valid PNG is not rejected for a missing label.
+ */
+const readHead = async (file: File): Promise<Uint8Array> => {
+  const slice = file.slice(0, 16);
+  if (typeof slice.arrayBuffer === 'function') return new Uint8Array(await slice.arrayBuffer());
+  // Older Safari lacks Blob.arrayBuffer.
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array((reader.result as ArrayBuffer) ?? new ArrayBuffer(0)));
+    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.readAsArrayBuffer(slice);
+  });
+};
+
+const sniffImageType = async (file: File): Promise<string | null> => {
+  try {
+    const head = await readHead(file);
+    const starts = (bytes: number[], at = 0) => bytes.every((byte, index) => head[at + index] === byte);
+    if (starts([0x89, 0x50, 0x4e, 0x47])) return 'image/png';
+    if (starts([0xff, 0xd8, 0xff])) return 'image/jpeg';
+    if (starts([0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+    if (starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
+    if (starts([0x3c, 0x3f, 0x78, 0x6d, 0x6c]) || starts([0x3c, 0x73, 0x76, 0x67])) return 'image/svg+xml';
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const typeOf = async (file: File): Promise<string> => {
+  if (file.type && file.type !== 'application/octet-stream') return file.type;
+  return (await sniffImageType(file)) ?? file.type;
+};
+
+export const validateImageFile = (file: File, resolvedType?: string): string | null => {
+  const type = resolvedType ?? file.type;
+  if (!ACCEPTED_IMAGE_TYPES.includes(type as (typeof ACCEPTED_IMAGE_TYPES)[number])) {
+    if (type === 'image/svg+xml') {
       return `${file.name}: SVG uploads are disabled for safety. Export it as PNG first.`;
     }
-    return `${file.name}: unsupported file type. Use PNG, JPEG, WebP, or GIF.`;
+    if (!type) {
+      return `${file.name}: that file has no recognizable image format. Use PNG, JPEG, WebP, or GIF.`;
+    }
+    return `${file.name}: unsupported file type (${type}). Use PNG, JPEG, WebP, or GIF.`;
   }
   if (file.size > MAX_IMAGE_BYTES) {
     return `${file.name}: ${(file.size / 1024 / 1024).toFixed(1)} MB is too large. The limit is ${MAX_IMAGE_BYTES / 1024 / 1024} MB.`;
@@ -49,11 +90,19 @@ export const createImageElement = async (
   position: { x: number; y: number },
   maxWidth = 520,
 ): Promise<UploadResult> => {
-  const error = validateImageFile(file);
-  if (error) throw new Error(error);
+  // Resolve the type first: some sources hand over an empty MIME type even for
+  // a perfectly good PNG, so validate the real content rather than the label.
+  const type = await typeOf(file);
+  const typeError = validateImageFile(file, type);
+  if (typeError) throw new Error(typeError);
 
   const src = await readAsDataUrl(file);
-  const natural = await loadImageSize(src);
+  const natural = await loadImageSize(src).catch(() => {
+    throw new Error(`${file.name}: the image is corrupt or uses an unsupported codec.`);
+  });
+  if (!natural.width || !natural.height) {
+    throw new Error(`${file.name}: the image has no dimensions.`);
+  }
   const scale = Math.min(1, maxWidth / natural.width, 620 / natural.height);
   const width = Math.round(natural.width * scale);
   const height = Math.round(natural.height * scale);

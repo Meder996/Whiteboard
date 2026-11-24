@@ -2,7 +2,8 @@
 
 import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Copy, Loader2, Sparkles } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, Copy, ImagePlus, Loader2, Sparkles } from 'lucide-react';
 import { BoardCanvas } from '@/components/board/BoardCanvas';
 import { BoardHeader } from '@/components/board/BoardHeader';
 import { ContextMenu, type ContextMenuState } from '@/components/board/ContextMenu';
@@ -25,16 +26,18 @@ import type { Board } from '@/lib/types';
 
 export default function BoardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [hash, setHash] = useState('');
   const [shareOpen, setShareOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showMinimap, setShowMinimap] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const { status, shared } = useEditorSession(id, hash);
+  const { status, shared, saveNow, saveAndExit, hasUnsavedChanges } = useEditorSession(id, hash);
 
   const elements = useEditor((state) => state.elements);
   const title = useEditor((state) => state.title);
@@ -57,7 +60,21 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     return () => window.removeEventListener('hashchange', read);
   }, []);
 
-  useKeyboardShortcuts({ onShortcuts: () => setShortcutsOpen(true) });
+  useKeyboardShortcuts({
+    onShortcuts: () => setShortcutsOpen(true),
+    onSave: () => void saveNow(),
+  });
+
+  // Word-style guard: warn before closing/navigating away with unsaved work.
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const currentBoard = useCallback(
     (): Board => ({
@@ -74,7 +91,11 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
 
   const handleRename = async (next: string) => {
     setTitle(next);
-    await saveBoard({ ...currentBoard(), title: next });
+  };
+
+  const handleSaveAndExit = async () => {
+    await saveAndExit();
+    router.push('/');
   };
 
   const handleExportPng = async () => {
@@ -143,8 +164,13 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     input.click();
   };
 
-  const handleUpload = async (files: FileList | File[]) => {
-    if (!files || readOnly) return;
+  const handleUpload = async (input: FileList | File[]) => {
+    // Snapshot the files *before* the first await. The <input> is cleared right
+    // after this is called, and FileList is a live view: reading it after an
+    // `await` returns an empty list in real browsers, which made uploads look
+    // like they silently did nothing.
+    const files = Array.from(input ?? []).filter((file): file is File => Boolean(file));
+    if (!files.length || readOnly) return;
     const { createImageElement } = await import('@/lib/upload');
     const state = useEditor.getState();
     const center = {
@@ -154,7 +180,7 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     const added = [];
     const errors: string[] = [];
     let offset = 0;
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       try {
         const result = await createImageElement(file, {
           x: center.x - 200 + offset,
@@ -181,8 +207,38 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
 
   const onDrop = async (event: React.DragEvent) => {
     event.preventDefault();
-    if (event.dataTransfer.files?.length) await handleUpload(event.dataTransfer.files);
+    setDragging(false);
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length) await handleUpload(files);
   };
+
+  // Paste an image straight from the clipboard (screenshots are the common
+  // case). Text pastes are left alone so they keep going into text editors.
+  const uploadRef = useRef(handleUpload);
+  uploadRef.current = handleUpload;
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const state = useEditor.getState();
+      if (state.readOnly || state.editingId) return;
+      const files = Array.from(event.clipboardData?.files ?? []).filter((file) =>
+        file.type.startsWith('image/'),
+      );
+      if (!files.length) {
+        const items = Array.from(event.clipboardData?.items ?? []);
+        for (const item of items) {
+          if (item.kind === 'file' && item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) files.push(file);
+          }
+        }
+      }
+      if (!files.length) return;
+      event.preventDefault();
+      void uploadRef.current(files);
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
 
   const loadExample = () => {
     addElements(buildQuickStart(), { select: false });
@@ -264,6 +320,10 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
       className="flex h-dvh flex-col overflow-hidden bg-[var(--surface-sunken)]"
       onDragOver={(event) => {
         event.preventDefault();
+        if (!readOnly) setDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget === event.target) setDragging(false);
       }}
       onDrop={onDrop}
     >
@@ -288,6 +348,8 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
         onPrint={() => window.print()}
         onShortcuts={() => setShortcutsOpen(true)}
         onRename={handleRename}
+        onSave={() => void saveNow()}
+        onSaveAndExit={handleSaveAndExit}
         collaboratorCount={0}
       />
 
@@ -308,8 +370,10 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
             className="sr-only"
             aria-label="Upload images"
             onChange={(event) => {
-              if (event.target.files) handleUpload(event.target.files);
+              // Copy first, then clear the input: see handleUpload.
+              const files = Array.from(event.target.files ?? []);
               event.target.value = '';
+              if (files.length) void handleUpload(files);
             }}
           />
 
@@ -340,8 +404,8 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                 </div>
                 <h2 className="mt-4 text-lg font-semibold">A blank canvas, infinite possibilities</h2>
                 <p className="mt-1.5 text-sm text-[var(--ink-muted)]">
-                  Start with a sticky note, sketch an idea, or load a quick-start tour with
-                  connectors and shapes.
+                  Start with a sticky note, sketch an idea, drop in an image, or load a quick-start
+                  tour with connectors and shapes. You can also paste a screenshot with ⌘/Ctrl+V.
                 </p>
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
                   <button type="button" className="btn-primary" onClick={loadExample}>
@@ -402,6 +466,15 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
               <ZoomControls />
             </div>
           </div>
+
+          {dragging && !readOnly ? (
+            <div className="no-print pointer-events-none absolute inset-3 z-40 grid place-items-center rounded-2xl border-2 border-dashed border-[var(--accent)] bg-[var(--accent-soft)]/70 backdrop-blur-[1px]">
+              <p className="flex items-center gap-2 rounded-xl bg-[var(--surface-raised)] px-4 py-2.5 text-sm font-semibold shadow-float">
+                <ImagePlus className="h-4 w-4 text-[var(--accent)]" aria-hidden />
+                Drop images to add them to the board
+              </p>
+            </div>
+          ) : null}
 
           {busy ? (
             <div className="absolute inset-0 z-40 grid place-items-center bg-slate-900/10 backdrop-blur-[1px]">
