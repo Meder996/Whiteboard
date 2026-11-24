@@ -178,7 +178,7 @@ There is **no hidden backend** and no claim of cross-device sync. To move a boar
 ```bash
 npm run typecheck   # tsc --noEmit, strict mode
 npm run lint        # next lint (ESLint, next/core-web-vitals)
-npm test            # 66 Vitest tests (jsdom)
+npm test            # 70 Vitest tests (jsdom)
 npm run build       # production build
 ```
 
@@ -195,6 +195,9 @@ The test suite covers:
   marquee multi-select, freehand strokes, connector binding, eraser, pan, handle resize, read-only.
 - **Dashboard** – empty state, listing & ordering, search, rename, duplicate, template creation,
   delete confirmation.
+- **Board page integration** – loads a stored board into the editor, renders every element,
+  settles autosave to "Saved", switches tools via keyboard, shows the empty-state helper, and
+  generates a working share link from the share dialog.
 
 ### Accessibility & UX
 - Every control has an accessible name; dialogs trap focus, close on `Escape`, and restore focus.

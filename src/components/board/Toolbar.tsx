@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import clsx from 'clsx';
 import {
   ArrowUpRight,
@@ -194,9 +195,15 @@ export function Toolbar({ onUploadClick }: ToolbarProps) {
 export function StyleControls({ compact = false }: { compact?: boolean } = {}) {
   const style = useEditor((state) => state.style);
   const setStyle = useEditor((state) => state.setStyle);
-  const selected = useEditor((state) => state.elements.filter((element) => state.selectedIds.includes(element.id)));
-  const updateElements = useEditor((state) => state.updateElements);
+  // Select primitives, then derive: returning a fresh array from a Zustand
+  // selector causes an infinite re-render loop.
+  const elements = useEditor((state) => state.elements);
   const selectedIds = useEditor((state) => state.selectedIds);
+  const selected = useMemo(
+    () => elements.filter((element) => selectedIds.includes(element.id)),
+    [elements, selectedIds],
+  );
+  const updateElements = useEditor((state) => state.updateElements);
   const readOnly = useEditor((state) => state.readOnly);
   const { toast } = useToast();
 
